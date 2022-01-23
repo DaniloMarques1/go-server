@@ -23,7 +23,9 @@ type Handler struct {
 func NewHandler() (*Handler, error) {
 	handler := Handler{}
 	handler.setFlags()
-	if err := handler.setDb(); err != nil { return nil, err }
+	if err := handler.setDb(); err != nil {
+		return nil, err
+	}
 	handler.router = chi.NewRouter()
 	return &handler, nil
 }
@@ -67,7 +69,7 @@ func (h *Handler) setFlags() {
 	h.fileName = fileFlag
 }
 
-// returns a map representing the json database
+// read the db.json file and set the db's map
 func (h *Handler) setDb() error {
 	bytes, err := os.ReadFile(h.fileName)
 	if err != nil {
@@ -105,7 +107,7 @@ func (h *Handler) registerRoutes(entity string) {
 		value := h.db[entity]
 		entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 		if err != nil {
-			RespondJSON(w, http.StatusBadRequest, "Invalid id") 
+			RespondJSON(w, http.StatusBadRequest, "Invalid id")
 			return
 		}
 		switch value.(type) {
@@ -175,7 +177,7 @@ func (h *Handler) registerRoutes(entity string) {
 			RespondJSON(w, http.StatusBadRequest, "Invalid id")
 			return
 		}
-		value := h.db[entity] 
+		value := h.db[entity]
 
 		switch value.(type) {
 		case []interface{}:
@@ -211,10 +213,11 @@ func (h *Handler) registerRoutes(entity string) {
 	})
 }
 
-// write te current on database file
+// write te current db state on file
 func (h *Handler) writeDB() error {
 	bytes, err := json.MarshalIndent(h.db, "", "  ")
 	if err != nil {
+		return err
 	}
 	if err := os.WriteFile(h.fileName, bytes, 0777); err != nil {
 		return err
