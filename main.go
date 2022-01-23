@@ -68,6 +68,7 @@ func getFlagsValues() (string, int) {
 	return fileFlag, portFlag
 }
 
+// returns a map representing the json database
 func getDb(fileName string) (map[string]interface{}, error) {
 	bytes, err := os.ReadFile(fileName)
 	if err != nil {
@@ -83,6 +84,7 @@ func getDb(fileName string) (map[string]interface{}, error) {
 	return db, nil
 }
 
+// it will print the resources available
 func resources(entity string, port int) {
 	baseUrl := fmt.Sprintf("http://localhost:%v", port)
 	fmt.Printf("%v/%v\n", baseUrl, entity)
@@ -145,22 +147,71 @@ func (h *Handler) registerRoutes(entity string) {
 			RespondJSON(w, http.StatusBadRequest, "Invalid body")
 		}
 		value := h.db[entity]
-		arr, ok := value.([]interface{})
-		if !ok {
-			RespondJSON(w, http.StatusBadRequest, "Invalid body")
+
+		switch value.(type) {
+		case []interface{}:
+			arr := value.([]interface{})
+			arr = append(arr, body)
+			h.db[entity] = arr
+		case map[string]interface{}:
+			h.db[entity] = body
+		default:
+			// TODO add some return here
 			return
 		}
-		arr = append(arr, body)
-		h.db[entity] = arr
+
 		if err := h.writeDB(); err != nil {
 			RespondJSON(w, http.StatusBadRequest, err.Error())
 			return
 		}
+
 		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(h.db)
+	})
+
+	h.router.Delete(fmt.Sprintf("/%v/{entityId}", entity), func(w http.ResponseWriter, r *http.Request) {
+		entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
+		if err != nil {
+			RespondJSON(w, http.StatusBadRequest, "Invalid id")
+			return
+		}
+		value := h.db[entity] 
+
+		switch value.(type) {
+		case []interface{}:
+			// TODO need to traverse the slice looking for entityId to remove from the slice
+			fmt.Println("It is an array")
+		case map[string]interface{}:
+			obj, ok := value.(map[string]interface{})
+			if !ok {
+				RespondJSON(w, http.StatusBadRequest, "Something went wrong")
+				return
+			}
+			if len(obj) == 0 {
+				RespondJSON(w, http.StatusNotFound, "Not found")
+				return
+			}
+
+			objId := obj["id"].(float64)
+			if int(objId) == entityId {
+				h.db[entity] = map[string]interface{}{}
+			}
+		default:
+			// TODO add return
+			return
+		}
+
+		if err := h.writeDB(); err != nil {
+			RespondJSON(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(h.db)
 	})
 }
 
+// write te current on database file
 func (h *Handler) writeDB() error {
 	bytes, err := json.MarshalIndent(h.db, "", "  ")
 	if err != nil {
