@@ -20,10 +20,12 @@ type Handler struct {
 	serverPort int
 }
 
-func NewHandler(db map[string]interface{}) *Handler {
-	handler := Handler{db: db}
+func NewHandler() (*Handler, error) {
+	handler := Handler{}
+	handler.setFlags()
+	if err := handler.setDb(); err != nil { return nil, err }
 	handler.router = chi.NewRouter()
-	return &handler
+	return &handler, nil
 }
 
 type ErrorDto struct {
@@ -31,21 +33,16 @@ type ErrorDto struct {
 }
 
 func main() {
-	fileName, port := getFlagsValues()
-	db, err := getDb(fileName)
+	handler, err := NewHandler()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	handler := NewHandler(db)
 	handler.router.Use(middleware)
 	handler.router.NotFound(handleNotFound)
-	handler.fileName = fileName
-	handler.serverPort = port
 
 	fmt.Println("Resources available")
 	fmt.Println("-----------------------------------------------------------------------")
-	for entity := range db {
+	for entity := range handler.db {
 		resources(entity, handler.serverPort)
 		handler.registerRoutes(entity)
 	}
@@ -55,8 +52,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", handler.serverPort), handler.router))
 }
 
-// returns the fileName and server port
-func getFlagsValues() (string, int) {
+// set the serverPort and fileName
+func (h *Handler) setFlags() {
 	var portFlag int
 	flag.IntVar(&portFlag, "p", 8080, "Defined server port")
 	flag.IntVar(&portFlag, "port", 8080, "Defined server port")
@@ -65,23 +62,26 @@ func getFlagsValues() (string, int) {
 	flag.StringVar(&fileFlag, "watch", "db.json", "Defines which file will represent the api database")
 
 	flag.Parse()
-	return fileFlag, portFlag
+
+	h.serverPort = portFlag
+	h.fileName = fileFlag
 }
 
 // returns a map representing the json database
-func getDb(fileName string) (map[string]interface{}, error) {
-	bytes, err := os.ReadFile(fileName)
+func (h *Handler) setDb() error {
+	bytes, err := os.ReadFile(h.fileName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	db := make(map[string]interface{})
 	err = json.Unmarshal(bytes, &db)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return db, nil
+	h.db = db
+	return nil
 }
 
 // it will print the resources available
