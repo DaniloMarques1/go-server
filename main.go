@@ -84,7 +84,7 @@ func getDb(fileName string) (map[string]interface{}, error) {
 }
 
 func resources(entity string, port int) {
-	baseUrl := fmt.Sprintf("http://localhost:%v", port) // TODO may change the port later
+	baseUrl := fmt.Sprintf("http://localhost:%v", port)
 	fmt.Printf("%v/%v\n", baseUrl, entity)
 }
 
@@ -101,7 +101,11 @@ func (h *Handler) registerRoutes(entity string) {
 
 	h.router.Get(fmt.Sprintf("/%v/{entityId}", entity), func(w http.ResponseWriter, r *http.Request) {
 		value := h.db[entity]
-		entityId, _ := strconv.Atoi(chi.URLParam(r, "entityId")) // TODO handle error
+		entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
+		if err != nil {
+			RespondJSON(w, http.StatusBadRequest, "Invalid id") 
+			return
+		}
 		switch value.(type) {
 		case string:
 			json.NewEncoder(w).Encode(value)
