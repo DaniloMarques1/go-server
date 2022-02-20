@@ -13,7 +13,6 @@ import (
 )
 
 type Handler struct {
-	//entity string
 	db         map[string]interface{}
 	router     *chi.Mux
 	fileName   string
@@ -22,7 +21,7 @@ type Handler struct {
 
 func NewHandler() (*Handler, error) {
 	handler := Handler{}
-	handler.setFlags()
+	handler.parseFlags()
 	if err := handler.setDb(); err != nil {
 		return nil, err
 	}
@@ -39,6 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	handler.router.Use(middleware)
 	handler.router.NotFound(handleNotFound)
 
@@ -55,7 +55,7 @@ func main() {
 }
 
 // set the serverPort and fileName
-func (h *Handler) setFlags() {
+func (h *Handler) parseFlags() {
 	var portFlag int
 	flag.IntVar(&portFlag, "p", 8080, "Defined server port")
 	flag.IntVar(&portFlag, "port", 8080, "Defined server port")
@@ -210,6 +210,38 @@ func (h *Handler) registerRoutes(entity string) {
 
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(h.db)
+	})
+
+	h.router.Put(fmt.Sprintf("/%v/{entityId}", entity), func(w http.ResponseWriter, r *http.Request) {
+		entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
+		if err != nil {
+			RespondJSON(w, http.StatusBadRequest, "Invalid id")
+			return
+		}
+
+		body := make(map[string]interface{})
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			RespondJSON(w, http.StatusBadRequest, "Invalid body")
+			return
+		}
+		// TODO traverse array and find the entityId and replace by body
+		entityData := h.db[entity] // here we have the person array
+		entitySlice, ok := entityData.([]interface{})
+		if !ok {
+			RespondJSON(w, http.StatusBadRequest, "Invalid entity") // TODO better message for the problem
+			return
+		}
+		for _, data := range entitySlice {
+			entityObj, ok := data.(map[string]interface{})
+			if ok {
+				if entityObj["id"] == float64(entityId) {
+					entityObj["name"] = body["name"]
+					entityObj["age"] = body["age"]
+					break
+				}
+			}
+		}
+		h.writeDB()
 	})
 }
 
