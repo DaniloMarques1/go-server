@@ -181,8 +181,10 @@ func (h *Handler) registerRoutes(entity string) {
 
 		switch value.(type) {
 		case []interface{}:
-			// TODO need to traverse the slice looking for entityId to remove from the slice
-			fmt.Println("It is an array")
+			slice := value.([]interface{})
+			slice = removeElement(slice, float64(entityId))
+			fmt.Println(slice)
+			h.db[entity] = slice
 		case map[string]interface{}:
 			obj, ok := value.(map[string]interface{})
 			if !ok {
@@ -224,7 +226,6 @@ func (h *Handler) registerRoutes(entity string) {
 			RespondJSON(w, http.StatusBadRequest, "Invalid body")
 			return
 		}
-		// TODO traverse array and find the entityId and replace by body
 		entityData := h.db[entity] // here we have the person array
 		entitySlice, ok := entityData.([]interface{})
 		if !ok {
@@ -241,7 +242,10 @@ func (h *Handler) registerRoutes(entity string) {
 				}
 			}
 		}
-		h.writeDB()
+		if err := h.writeDB(); err != nil {
+			RespondJSON(w, http.SattusInternalServerError, err.Error())
+			return
+		}
 	})
 }
 
@@ -272,4 +276,18 @@ func middleware(next http.Handler) http.Handler {
 func handleNotFound(w http.ResponseWriter, r *http.Request) {
 	RespondJSON(w, http.StatusNotFound, "endpoint not found")
 	return
+}
+
+func removeElement(slice []interface{}, entityId float64) []interface{} {
+	nSlice := make([]interface{}, 0)
+	for _, data := range slice {
+		entityObj, ok := data.(map[string]interface{})
+		if ok {
+			if entityObj["id"] != entityId {
+				// should remove it
+				nSlice = append(nSlice, entityObj)
+			}
+		}
+	}
+	return nSlice
 }
