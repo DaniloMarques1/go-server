@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -46,13 +47,13 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 func (h *Handler) readDb() (map[string]interface{}, error) {
 	bytes, err := os.ReadFile(h.fileName)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Erro reading the file. Make sure the file exists")
 	}
 
 	db := make(map[string]interface{})
 	err = json.Unmarshal(bytes, &db)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Error unmarshalling the json")
 	}
 	return db, nil
 }
