@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -13,10 +12,6 @@ var (
 	fileFlag string
 )
 
-type ErrorDto struct {
-	Message string `json:"message"`
-}
-
 func main() {
 	parseFlags()
 
@@ -24,9 +19,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	handler.router.Use(middleware)
-	handler.router.NotFound(handleNotFound)
 
 	fmt.Println("Resources available")
 	fmt.Println("-----------------------------------------------------------------------")
@@ -53,24 +45,4 @@ func parseFlags() {
 func resources(entity string, port int) {
 	baseUrl := fmt.Sprintf("http://localhost:%v", port)
 	fmt.Printf("%v/%v\n", baseUrl, entity)
-}
-
-// writes a json to the response writter object
-func RespondJSON(w http.ResponseWriter, code int, message string) {
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(ErrorDto{Message: message})
-}
-
-// intercept request and add content type header to it
-func middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
-	})
-}
-
-// midleware to handle undefined route/endpoint
-func handleNotFound(w http.ResponseWriter, r *http.Request) {
-	RespondJSON(w, http.StatusNotFound, "endpoint not found")
-	return
 }

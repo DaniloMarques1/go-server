@@ -11,6 +11,10 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type ErrorDto struct {
+	Message string `json:"message"`
+}
+
 type Handler struct {
 	db         map[string]interface{}
 	router     *chi.Mux
@@ -20,6 +24,9 @@ type Handler struct {
 
 func NewHandler(fileName string, serverPort int) (*Handler, error) {
 	router := chi.NewRouter()
+	router.Use(middleware)
+	router.NotFound(handleNotFound)
+
 	handler := &Handler{
 		router:     router,
 		fileName:   fileName,
@@ -99,7 +106,7 @@ func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request
 	value := h.db[entity]
 	entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, "Invalid id")
+		RespondERR(w, http.StatusBadRequest, "Invalid id")
 		return
 	}
 	switch value.(type) {
@@ -116,7 +123,7 @@ func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request
 				return
 			}
 		}
-		RespondJSON(w, http.StatusBadRequest, "Not found")
+		RespondERR(w, http.StatusBadRequest, "Not found")
 		return
 	case map[string]interface{}:
 		obj := value.(map[string]interface{})
@@ -125,13 +132,13 @@ func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request
 			json.NewEncoder(w).Encode(obj)
 			return
 		}
-		RespondJSON(w, http.StatusBadRequest, "Not found")
+		RespondERR(w, http.StatusBadRequest, "Not found")
 		return
 	default:
 		log.Println("No type matched")
 	}
 
-	RespondJSON(w, http.StatusBadRequest, "Something went wrong")
+	RespondERR(w, http.StatusBadRequest, "Something went wrong")
 	return
 
 }
@@ -139,7 +146,7 @@ func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request
 func (h *Handler) Save(entity string, w http.ResponseWriter, r *http.Request) {
 	body := make(map[string]interface{})
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		RespondJSON(w, http.StatusBadRequest, "Invalid body")
+		RespondERR(w, http.StatusBadRequest, "Invalid body")
 	}
 	value := h.db[entity]
 
@@ -151,12 +158,12 @@ func (h *Handler) Save(entity string, w http.ResponseWriter, r *http.Request) {
 	case map[string]interface{}:
 		h.db[entity] = body
 	default:
-		// TODO add some return here
+		RespondERR(w, http.StatusInternalServerError, "Unexpected error")
 		return
 	}
 
 	if err := h.writeDB(); err != nil {
-		RespondJSON(w, http.StatusBadRequest, err.Error())
+		RespondERR(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -167,7 +174,7 @@ func (h *Handler) Save(entity string, w http.ResponseWriter, r *http.Request) {
 func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Request) {
 	entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, "Invalid id")
+		RespondERR(w, http.StatusBadRequest, "Invalid id")
 		return
 	}
 	value := h.db[entity]
@@ -181,11 +188,11 @@ func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Reque
 	case map[string]interface{}:
 		obj, ok := value.(map[string]interface{})
 		if !ok {
-			RespondJSON(w, http.StatusBadRequest, "Something went wrong")
+			RespondERR(w, http.StatusBadRequest, "Something went wrong")
 			return
 		}
 		if len(obj) == 0 {
-			RespondJSON(w, http.StatusNotFound, "Not found")
+			RespondERR(w, http.StatusNotFound, "Not found")
 			return
 		}
 
@@ -194,12 +201,12 @@ func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Reque
 			h.db[entity] = map[string]interface{}{}
 		}
 	default:
-		// TODO add return
+		RespondERR(w, http.StatusInternalServerError, "Unexpected error")
 		return
 	}
 
 	if err := h.writeDB(); err != nil {
-		RespondJSON(w, http.StatusInternalServerError, err.Error())
+		RespondERR(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -210,35 +217,51 @@ func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Reque
 func (h *Handler) Update(entity string, w http.ResponseWriter, r *http.Request) {
 	entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, "Invalid id")
+		RespondERR(w, http.StatusBadRequest, "Invalid id")
 		return
 	}
 
 	body := make(map[string]interface{})
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		RespondJSON(w, http.StatusBadRequest, "Invalid body")
+		RespondERR(w, http.StatusBadRequest, "Invalid body")
 		return
 	}
 	entityData := h.db[entity] // here we have the person array
 	entitySlice, ok := entityData.([]interface{})
 	if !ok {
-		RespondJSON(w, http.StatusBadRequest, "Invalid entity") // TODO better message for the problem
+		RespondERR(w, http.StatusBadRequest, "Invalid entity type")
 		return
 	}
+	found := false
 	for _, data := range entitySlice {
 		entityObj, ok := data.(map[string]interface{})
 		if ok {
+			fmt.Printf("Id = %T\n", entityObj["id"])
 			if entityObj["id"] == float64(entityId) {
+				found = true
 				entityObj["name"] = body["name"]
 				entityObj["age"] = body["age"]
 				break
 			}
 		}
 	}
-	if err := h.writeDB(); err != nil {
-		RespondJSON(w, http.StatusInternalServerError, err.Error())
+
+	if !found {
+		RespondERR(w, http.StatusNotFound, fmt.Sprintf("%v not found", entity))
 		return
 	}
+
+	if err := h.writeDB(); err != nil {
+		RespondERR(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writes a json to the response writter object
+func RespondERR(w http.ResponseWriter, code int, message string) {
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(ErrorDto{Message: message})
 }
 
 // remove an element from a slice
@@ -253,4 +276,18 @@ func removeElement(slice []interface{}, entityId float64) []interface{} {
 		}
 	}
 	return nSlice
+}
+
+// intercept request and add content type header to it
+func middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// midleware to handle undefined route/endpoint
+func handleNotFound(w http.ResponseWriter, r *http.Request) {
+	RespondERR(w, http.StatusNotFound, "endpoint not found")
+	return
 }
