@@ -24,7 +24,7 @@ func Run() {
 	fmt.Println("-----------------------------------------------------------------------")
 	for entity := range handler.db {
 		resources(entity, handler.serverPort)
-		handler.registerRoutes(entity)
+		handler.RegisterRoutes(entity)
 	}
 
 	fmt.Println()

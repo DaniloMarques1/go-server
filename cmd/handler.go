@@ -53,6 +53,8 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 	return handler, nil
 }
 
+// TODO padronize name Db or DB
+
 // read the file given as argument
 func (h *Handler) readDb() (DatabaseType, error) {
 	bytes, err := os.ReadFile(h.fileName)
@@ -82,7 +84,7 @@ func (h *Handler) writeDB() error {
 
 // create REST endpoints for all the entities defined
 // on the db.json file
-func (h *Handler) registerRoutes(entity string) {
+func (h *Handler) RegisterRoutes(entity string) {
 	h.router.Get(fmt.Sprintf("/%v", entity), func(w http.ResponseWriter, r *http.Request) {
 		h.FindAll(entity, w, r)
 		return
