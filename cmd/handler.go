@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -12,12 +11,23 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// messages constants
+
+const (
+	ElementNotFound = "Element Not found"
+	InvalidId       = "Invalid ID"
+	InvalidBody     = "Invalid Body"
+)
+
 type ErrorDto struct {
 	Message string `json:"message"`
 }
 
+// force each key to be an array of objects
+type DatabaseType map[string][]map[string]interface{}
+
 type Handler struct {
-	db         map[string]interface{}
+	db         DatabaseType
 	router     *chi.Mux
 	fileName   string
 	serverPort int
@@ -44,13 +54,13 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 }
 
 // read the file given as argument
-func (h *Handler) readDb() (map[string]interface{}, error) {
+func (h *Handler) readDb() (DatabaseType, error) {
 	bytes, err := os.ReadFile(h.fileName)
 	if err != nil {
-		return nil, errors.New("Erro reading the file. Make sure the file exists")
+		return nil, errors.New("Error reading the file. Make sure the file exists")
 	}
 
-	db := make(map[string]interface{})
+	db := make(DatabaseType)
 	err = json.Unmarshal(bytes, &db)
 	if err != nil {
 		return nil, errors.New("Error unmarshalling the json")
@@ -104,42 +114,26 @@ func (h *Handler) FindAll(entity string, w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request) {
-	value := h.db[entity]
+	slc := h.db[entity] // array of maps
 	entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 	if err != nil {
-		RespondERR(w, http.StatusBadRequest, "Invalid id")
+		RespondERR(w, http.StatusBadRequest, InvalidId)
 		return
 	}
-	switch value.(type) {
-	case string:
-		json.NewEncoder(w).Encode(value)
-		return
-	case []interface{}:
-		arr := value.([]interface{})
-		for _, item := range arr {
-			obj := item.(map[string]interface{})
-			objId := obj["id"].(float64)
-			if int(objId) == entityId {
-				json.NewEncoder(w).Encode(obj)
-				return
+	for _, item := range slc {
+		itemId, ok := item["id"]
+		if ok {
+			id, ok := itemId.(int)
+			if ok {
+				if id == entityId {
+					json.NewEncoder(w).Encode(item)
+					return
+				}
 			}
 		}
-		RespondERR(w, http.StatusBadRequest, "Not found")
-		return
-	case map[string]interface{}:
-		obj := value.(map[string]interface{})
-		objId := obj["id"].(float64)
-		if int(objId) == entityId {
-			json.NewEncoder(w).Encode(obj)
-			return
-		}
-		RespondERR(w, http.StatusBadRequest, "Not found")
-		return
-	default:
-		log.Println("No type matched")
 	}
 
-	RespondERR(w, http.StatusBadRequest, "Something went wrong")
+	RespondERR(w, http.StatusNotFound, ElementNotFound)
 	return
 
 }
@@ -147,67 +141,36 @@ func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request
 func (h *Handler) Save(entity string, w http.ResponseWriter, r *http.Request) {
 	body := make(map[string]interface{})
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		RespondERR(w, http.StatusBadRequest, "Invalid body")
+		RespondERR(w, http.StatusBadRequest, InvalidBody)
 	}
 	value := h.db[entity]
-
-	switch value.(type) {
-	case []interface{}:
-		arr := value.([]interface{})
-		arr = append(arr, body)
-		h.db[entity] = arr
-	case map[string]interface{}:
-		h.db[entity] = body
-	default:
-		RespondERR(w, http.StatusInternalServerError, "Unexpected error")
-		return
-	}
+	value = append(value, body)
 
 	if err := h.writeDB(); err != nil {
-		RespondERR(w, http.StatusBadRequest, err.Error())
+		RespondERR(w, http.StatusInternalServerError, err.Error()) // TODO the error could be a constant
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(h.db)
+	return
 }
 
 func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Request) {
 	entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 	if err != nil {
-		RespondERR(w, http.StatusBadRequest, "Invalid id")
+		RespondERR(w, http.StatusBadRequest, InvalidId)
 		return
 	}
 	value := h.db[entity]
-
-	switch value.(type) {
-	case []interface{}:
-		slice := value.([]interface{})
-		slice = removeElement(slice, float64(entityId))
-		fmt.Println(slice)
-		h.db[entity] = slice
-	case map[string]interface{}:
-		obj, ok := value.(map[string]interface{})
-		if !ok {
-			RespondERR(w, http.StatusBadRequest, "Something went wrong")
-			return
-		}
-		if len(obj) == 0 {
-			RespondERR(w, http.StatusNotFound, "Not found")
-			return
-		}
-
-		objId := obj["id"].(float64)
-		if int(objId) == entityId {
-			h.db[entity] = map[string]interface{}{}
-		}
-	default:
-		RespondERR(w, http.StatusInternalServerError, "Unexpected error")
+	value, err = removeElement(value, float64(entityId))
+	if err != nil {
+		RespondERR(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	if err := h.writeDB(); err != nil {
-		RespondERR(w, http.StatusInternalServerError, err.Error())
+		RespondERR(w, http.StatusInternalServerError, err.Error()) // TODO the error could be a constant
 		return
 	}
 
@@ -218,32 +181,22 @@ func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Reque
 func (h *Handler) Update(entity string, w http.ResponseWriter, r *http.Request) {
 	entityId, err := strconv.Atoi(chi.URLParam(r, "entityId"))
 	if err != nil {
-		RespondERR(w, http.StatusBadRequest, "Invalid id")
+		RespondERR(w, http.StatusBadRequest, InvalidId)
 		return
 	}
 
 	body := make(map[string]interface{})
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		RespondERR(w, http.StatusBadRequest, "Invalid body")
+		RespondERR(w, http.StatusBadRequest, InvalidBody)
 		return
 	}
-	entityData := h.db[entity] // here we have the person array
-	entitySlice, ok := entityData.([]interface{})
-	if !ok {
-		RespondERR(w, http.StatusBadRequest, "Invalid entity type")
-		return
-	}
+	value := h.db[entity]
 	found := false
-	for _, data := range entitySlice {
-		entityObj, ok := data.(map[string]interface{})
-		if ok {
-			fmt.Printf("Id = %T\n", entityObj["id"])
-			if entityObj["id"] == float64(entityId) {
-				found = true
-				entityObj["name"] = body["name"]
-				entityObj["age"] = body["age"]
-				break
-			}
+	for _, data := range value {
+		if data["id"] == float64(entityId) {
+			found = true
+			// TODO Update the entity values
+			break
 		}
 	}
 
@@ -256,6 +209,7 @@ func (h *Handler) Update(entity string, w http.ResponseWriter, r *http.Request) 
 		RespondERR(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -266,17 +220,21 @@ func RespondERR(w http.ResponseWriter, code int, message string) {
 }
 
 // remove an element from a slice
-func removeElement(slice []interface{}, entityId float64) []interface{} {
-	nSlice := make([]interface{}, 0)
+func removeElement(slice []map[string]interface{}, entityId float64) ([]map[string]interface{}, error) {
+	nSlice := make([]map[string]interface{}, 0)
+	found := false
 	for _, data := range slice {
-		entityObj, ok := data.(map[string]interface{})
-		if ok {
-			if entityObj["id"] != entityId {
-				nSlice = append(nSlice, entityObj)
-			}
+		if data["id"] != entityId {
+			nSlice = append(nSlice, data)
+		} else {
+			found = true
 		}
 	}
-	return nSlice
+	if !found {
+		return nil, errors.New(ElementNotFound)
+	}
+
+	return nSlice, nil
 }
 
 // intercept request and add content type header to it
