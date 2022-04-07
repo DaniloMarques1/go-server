@@ -44,7 +44,7 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 		serverPort: serverPort,
 	}
 
-	db, err := handler.readDb()
+	db, err := handler.readDB()
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 // TODO padronize name Db or DB
 
 // read the file given as argument
-func (h *Handler) readDb() (DatabaseType, error) {
+func (h *Handler) readDB() (DatabaseType, error) {
 	bytes, err := os.ReadFile(h.fileName)
 	if err != nil {
 		return nil, errors.New("Error reading the file. Make sure the file exists")
@@ -125,12 +125,9 @@ func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request
 	for _, item := range slc {
 		itemId, ok := item["id"]
 		if ok {
-			id, ok := itemId.(int)
-			if ok {
-				if id == entityId {
-					json.NewEncoder(w).Encode(item)
-					return
-				}
+			if itemId == float64(entityId) {
+				json.NewEncoder(w).Encode(item)
+				return
 			}
 		}
 	}
@@ -149,7 +146,7 @@ func (h *Handler) Save(entity string, w http.ResponseWriter, r *http.Request) {
 	value = append(value, body)
 
 	if err := h.writeDB(); err != nil {
-		RespondERR(w, http.StatusInternalServerError, err.Error()) // TODO the error could be a constant
+		RespondERR(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -176,7 +173,7 @@ func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusNoContent)
 	json.NewEncoder(w).Encode(h.db)
 }
 
@@ -197,13 +194,17 @@ func (h *Handler) Update(entity string, w http.ResponseWriter, r *http.Request) 
 	for _, data := range value {
 		if data["id"] == float64(entityId) {
 			found = true
-			// TODO Update the entity values
+			for key, _ := range data {
+				if key != "id" {
+					data[key] = body[key]
+				}
+			}
 			break
 		}
 	}
 
 	if !found {
-		RespondERR(w, http.StatusNotFound, fmt.Sprintf("%v not found", entity))
+		RespondERR(w, http.StatusNotFound, ElementNotFound)
 		return
 	}
 
@@ -224,15 +225,12 @@ func RespondERR(w http.ResponseWriter, code int, message string) {
 // remove an element from a slice
 func removeElement(slice []map[string]interface{}, entityId float64) ([]map[string]interface{}, error) {
 	nSlice := make([]map[string]interface{}, 0)
-	found := false
 	for _, data := range slice {
 		if data["id"] != entityId {
 			nSlice = append(nSlice, data)
-		} else {
-			found = true
 		}
 	}
-	if !found {
+	if len(nSlice) == len(slice) {
 		return nil, errors.New(ElementNotFound)
 	}
 

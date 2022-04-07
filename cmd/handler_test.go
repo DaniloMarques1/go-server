@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
+	"strconv"
 	"testing"
 )
 
@@ -22,15 +25,32 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	handler.RegisterRoutes("person")
 	code := m.Run()
+	removeFile()
 	os.Exit(code)
 }
 
 func createFile() error {
-	json := []byte(`{"person": [{"name": "Fitz", "age": 21}, {"name": "Batman", "age": 25}]}`)
+	json := []byte(`{"person": [{"id": 1, "name": "Fitz", "age": 21}, {"id": 2, "name": "Batman", "age": 25}]}`)
 	if err := os.WriteFile(TEMPFILE, json, 0777); err != nil {
+		return err
+	}
+	return nil
+}
+
+func resetDB() error {
+	db, err := handler.readDB()
+	if err != nil {
+		return err
+	}
+	handler.db = db
+	return nil
+}
+
+func removeFile() error {
+	if err := os.Remove(TEMPFILE); err != nil {
 		return err
 	}
 	return nil
@@ -42,23 +62,239 @@ func executeRequest(request *http.Request) *httptest.ResponseRecorder {
 	return rr
 }
 
-func parseResponse(resp []byte) (DatabaseType, error) {
-	res := make(DatabaseType)
-	if err := json.Unmarshal(resp, &res); err != nil {
-		return nil, err
+func parseResponse(resp []byte, res interface{}) error {
+	if err := json.Unmarshal(resp, res); err != nil {
+		return err
 	}
 
-	return res, nil
+	return nil
 }
 
 func TestSave(t *testing.T) {
-	req, _ := http.NewRequest(http.MethodGet, "/person", nil)
-	response := executeRequest(req)
-	res, err := parseResponse(response.Body.Bytes())
-	if err != nil {
-		t.Fatal(err)
+	createFile()
+	resetDB()
+	cases := []struct {
+		label              string
+		body               string
+		expectedStatusCode int
+		last               bool
+	}{
+		{"Should return http 201", `{"id": 1, "name":"Michael", "age": 40}`, http.StatusCreated, false},
+		{"Should return http 400", `wrong body type`, http.StatusBadRequest, false},
+		{"Should return http 500", `{"id": 1, "name":"Michael", "age": 40}`, http.StatusInternalServerError, true},
 	}
-	if len(res["person"]) != 2 {
-		t.Fatalf("Should have returned lenght 2, instead returned length %v\n", len(res["person"]))
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			if tc.last {
+				// so that writeDB returns an error
+				handler.fileName = ""
+			}
+			req := httptest.NewRequest(http.MethodPost, "/person", strings.NewReader(tc.body))
+			response := executeRequest(req)
+			if response.Code != tc.expectedStatusCode {
+				t.Fatalf("Wrong status code. Expect: %v got: %v\n", tc.expectedStatusCode, response.Code)
+			}
+			if tc.last {
+				handler.fileName = TEMPFILE
+			}
+		})
+	}
+	removeFile()
+}
+
+func TestFindAll(t *testing.T) {
+	createFile()
+	resetDB()
+	cases := []struct {
+		label string
+	}{
+		{"Should return http 200"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/person", nil)
+			response := executeRequest(req)
+			res := make(DatabaseType)
+			err := parseResponse(response.Body.Bytes(), &res)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res["person"]) != 2 {
+				t.Fatalf("Should have returned lenght 2, instead returned length %v\n", len(res["person"]))
+			}
+		})
+	}
+
+	removeFile()
+}
+
+func TestFindById(t *testing.T) {
+	createFile()
+	resetDB()
+
+	cases := []struct {
+		label          string
+		id             string
+		expected       string
+		expectedStatus int
+		errReturned    bool
+	}{
+		{"Search for id 2", "2", "Batman", http.StatusOK, false},
+		{"Search for id 1", "1", "Fitz", http.StatusOK, false},
+		{"Search for id that does not exist", "100", ElementNotFound, http.StatusNotFound, true},
+		{"Search for invalid id", "Invalid", InvalidId, http.StatusBadRequest, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/person/%v", tc.id), nil)
+			response := executeRequest(req)
+			if response.Code != tc.expectedStatus {
+				t.Fatalf("Wrong status code. Expected: %v got: %v\n", tc.expectedStatus, response.Code)
+			}
+			res := make(map[string]interface{})
+			err := parseResponse(response.Body.Bytes(), &res)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.errReturned {
+				if res["message"] != tc.expected {
+					t.Fatalf("Expected element not found error\n")
+				}
+			} else {
+				if res["name"] != tc.expected {
+					t.Fatalf("Should have returned name: %v, instead got: %v\n", tc.expected, res["name"])
+				}
+			}
+		})
+	}
+
+	removeFile()
+}
+
+func TestUpdateById(t *testing.T) {
+	createFile()
+	resetDB()
+
+	cases := []struct {
+		label          string
+		id             string
+		body           string
+		updatedName    string
+		expectedStatus int
+		errReturned    bool
+		errMsg         string
+	}{
+		{"Update for id 1", "1", `{"name": "FitzBoy"}`, "FitzBoy", http.StatusNoContent, false, ""},
+		{"Update for id 2", "2", `{"name": "Robin"}`, "Robin", http.StatusNoContent, false, ""},
+		{"Search for id that does not exist", "100", `{"name": "Robin"}`, "", http.StatusNotFound, true, ElementNotFound},
+		{"Search for invalid id", "Invalid", `{"name": "Robin"}`, "", http.StatusBadRequest, true, InvalidId},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/person/%v", tc.id), strings.NewReader(tc.body))
+			response := executeRequest(req)
+			if response.Code != tc.expectedStatus {
+				t.Fatalf("Wrong status code. Expected: %v got: %v\n", tc.expectedStatus, response.Code)
+			}
+
+			if tc.errReturned {
+				res := make(map[string]interface{})
+				err := parseResponse(response.Body.Bytes(), &res)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if res["message"] != tc.errMsg {
+					t.Fatalf("Expected element not found error\n")
+				}
+			} else {
+				for _, item := range handler.db["person"] {
+					id, _ := item["id"].(float64)
+					tcId, _ := strconv.ParseFloat(tc.id, 64)
+					if id == tcId {
+						if item["name"] != tc.updatedName {
+							t.Fatalf("Wrong updated name. Expect: %v got: %v\n", tc.updatedName, item["name"])
+						}
+					}
+				}
+			}
+		})
+	}
+
+	removeFile()
+}
+
+func TestRemoveById(t *testing.T) {
+	createFile()
+	resetDB()
+
+	cases := []struct {
+		label          string
+		id             string
+		expectedStatus int
+		errReturned    bool
+		errMsg         string
+	}{
+		{"Search for id 2", "2", http.StatusNoContent, false, ""},
+		{"Search for id 1", "1", http.StatusNoContent, false, ""},
+		{"Search for id that does not exist", "100", http.StatusNotFound, true, ElementNotFound},
+		{"Search for invalid id", "Invalid", http.StatusBadRequest, true, InvalidId},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/person/%v", tc.id), nil)
+			response := executeRequest(req)
+			if response.Code != tc.expectedStatus {
+				t.Fatalf("Wrong status code. Expected: %v got: %v\n", tc.expectedStatus, response.Code)
+			}
+
+			if tc.errReturned {
+				res := make(map[string]interface{})
+				err := parseResponse(response.Body.Bytes(), &res)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if res["message"] != tc.errMsg {
+					t.Fatalf("Expected element not found error\n")
+				}
+			}
+		})
+	}
+
+	removeFile()
+}
+
+func TestRemoveElement(t *testing.T) {
+	cases := []struct {
+		label          string
+		slice          []map[string]interface{}
+		idToRemove     float64
+		lengthReturned int
+		errReturned    string
+	}{
+		{"Should remove id 1", []map[string]interface{}{{"id": float64(1)}, {"id": float64(2)}}, 1, 1, ""},
+		{"Should remove id 2", []map[string]interface{}{{"id": float64(1)}, {"id": float64(2)}}, 2, 1, ""},
+		{"Should not remove element", []map[string]interface{}{{"id": float64(1)}, {"id": float64(2)}}, 3, 2, ElementNotFound},
+		{"Should remove element", []map[string]interface{}{}, 1, 0, ElementNotFound},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			nSlice, err := removeElement(tc.slice, tc.idToRemove)
+			if len(tc.errReturned) > 0 && err == nil {
+				t.Fatal("Should have returned error")
+			}
+			if err != nil {
+				if tc.errReturned != err.Error() {
+					t.Fatalf("Wrong error returned. Expected: %v got: %v\n", tc.errReturned, err.Error())
+				}
+			} else {
+				if len(nSlice) != tc.lengthReturned {
+					t.Fatalf("Wrong length returned. Expected: %v got: %v\n", tc.lengthReturned, len(nSlice))
+				}
+			}
+		})
 	}
 }
