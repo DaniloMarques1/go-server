@@ -25,10 +25,17 @@ By doing:
 go-server --watch ./db.json
 ```
 
-Would be created endpoints for person, like:
+Will be created endpoints for person, like:
 
 ```
 GET localhost:3000/person
 GET localhost:3000/person/1
 POST localhost:3000/person
+```
+
+The get endpoint `GET localhost:3000/person` supports pagination as well if you
+use the query params `page` and `page_size` for example:
+
+```
+GET localhost:3000/person?page=0&page_size=10
 ```
