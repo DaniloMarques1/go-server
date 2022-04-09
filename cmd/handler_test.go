@@ -136,7 +136,9 @@ func TestFindAll(t *testing.T) {
 		{"Should return http 200 with pagination page 0", "0", "3", 3, http.StatusOK},
 		{"Should return http 200 with pagination page 1", "1", "3", 3, http.StatusOK},
 		{"Should return http 200 with pagination page 1", "1", "5", 5, http.StatusOK},
-		{"Should return http 200 with pagination page 1", "3", "5", 3, http.StatusOK},
+		{"Should return http 200 with pagination page 3", "3", "5", 3, http.StatusOK},
+		{"Should return http 200 with pagination page 1", "1", "20", 0, http.StatusOK},
+		{"Should return http 200 with pagination page 0", "0", "200", len(handler.db["person"]), http.StatusOK},
 		{"Should return http 400 with page invalid", "invalid", "5", 3, http.StatusBadRequest},
 		{"Should return http 400 with page_size invalid", "0", "invalid", 3, http.StatusBadRequest},
 	}
@@ -158,7 +160,7 @@ func TestFindAll(t *testing.T) {
 
 				if len(res["person"]) != tc.lenghtReturned {
 					t.Fatalf("Should have returned lenght %v, instead returned length %v\n",
-					len(handler.db), len(res["person"]))
+						len(handler.db), len(res["person"]))
 				}
 			}
 		})

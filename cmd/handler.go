@@ -113,18 +113,27 @@ func (h *Handler) RegisterRoutes(entity string) {
 }
 
 func (h *Handler) FindAll(entity string, w http.ResponseWriter, r *http.Request) {
+	values := h.db[entity]
 	q := r.URL.Query()
 	page, err := strconv.Atoi(q.Get("page"))
 	if err != nil {
-		RespondERR(w, http.StatusBadRequest, InvalidParams)
+		if len(q.Get("page")) > 0 {
+			RespondERR(w, http.StatusBadRequest, InvalidParams)
+			return
+		}
+		page = 0
 	}
 	pageSize, err := strconv.Atoi(q.Get("page_size"))
 	if err != nil {
-		RespondERR(w, http.StatusBadRequest, InvalidParams)
+		if len(q.Get("page_size")) > 0 {
+			RespondERR(w, http.StatusBadRequest, InvalidParams)
+			return
+		}
+		pageSize = len(values)
 	}
 
-	values := h.db[entity]
 	skip := page
+
 	end := pageSize * (page + 1)
 	if end > len(values) {
 		end = len(values)
@@ -132,6 +141,12 @@ func (h *Handler) FindAll(entity string, w http.ResponseWriter, r *http.Request)
 	if page > 0 {
 		skip = page * pageSize
 	}
+
+	if skip > len(values) {
+		json.NewEncoder(w).Encode(map[string]interface{}{entity: []interface{}{}})
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{entity: values[skip:end]})
 }
 
@@ -164,6 +179,7 @@ func (h *Handler) Save(entity string, w http.ResponseWriter, r *http.Request) {
 	}
 	value := h.db[entity]
 	value = append(value, body)
+	h.db[entity] = value
 
 	if err := h.writeDB(); err != nil {
 		RespondERR(w, http.StatusInternalServerError, err.Error())
@@ -189,7 +205,7 @@ func (h *Handler) RemoveById(entity string, w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.writeDB(); err != nil {
-		RespondERR(w, http.StatusInternalServerError, err.Error()) // TODO the error could be a constant
+		RespondERR(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -214,7 +230,7 @@ func (h *Handler) Update(entity string, w http.ResponseWriter, r *http.Request) 
 	for _, data := range value {
 		if data["id"] == float64(entityId) {
 			found = true
-			for key, _ := range data {
+			for key := range data {
 				if key != "id" {
 					data[key] = body[key]
 				}
