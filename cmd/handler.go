@@ -12,11 +12,11 @@ import (
 )
 
 // messages constants
-
 const (
 	ElementNotFound = "Element Not found"
 	InvalidId       = "Invalid ID"
 	InvalidBody     = "Invalid Body"
+	InvalidParams   = "Invalid parameters"
 )
 
 type ErrorDto struct {
@@ -55,7 +55,8 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 
 // TODO padronize name Db or DB
 
-// read the file given as argument
+// read the file given as argument and
+// set as the handler database
 func (h *Handler) readDB() (DatabaseType, error) {
 	bytes, err := os.ReadFile(h.fileName)
 	if err != nil {
@@ -112,7 +113,26 @@ func (h *Handler) RegisterRoutes(entity string) {
 }
 
 func (h *Handler) FindAll(entity string, w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{entity: h.db[entity]})
+	q := r.URL.Query()
+	page, err := strconv.Atoi(q.Get("page"))
+	if err != nil {
+		RespondERR(w, http.StatusBadRequest, InvalidParams)
+	}
+	pageSize, err := strconv.Atoi(q.Get("page_size"))
+	if err != nil {
+		RespondERR(w, http.StatusBadRequest, InvalidParams)
+	}
+
+	values := h.db[entity]
+	skip := page
+	end := pageSize * (page + 1)
+	if end > len(values) {
+		end = len(values)
+	}
+	if page > 0 {
+		skip = page * pageSize
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{entity: values[skip:end]})
 }
 
 func (h *Handler) FindById(entity string, w http.ResponseWriter, r *http.Request) {

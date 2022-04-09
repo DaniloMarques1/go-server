@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -33,7 +33,27 @@ func TestMain(m *testing.M) {
 }
 
 func createFile() error {
-	json := []byte(`{"person": [{"id": 1, "name": "Fitz", "age": 21}, {"id": 2, "name": "Batman", "age": 25}]}`)
+	json := []byte(`{ "person": [
+		{"id": 1, "name": "Fitz", "age": 21},
+		{"id": 2, "name": "Batman", "age": 25},
+		{"id": 3, "name": "Joao", "age": 32},
+		{"id": 4, "name": "Zé", "age": 21},
+		{"id": 5, "name": "Beeh", "age": 23},
+		{"id": 6, "name": "Foo", "age": 22},
+		{"id": 7, "name": "John", "age": 18},
+		{"id": 8, "name": "Zac", "age": 30},
+		{"id": 9, "name": "Dee", "age": 45},
+		{"id": 10, "name": "Mike", "age": 46},
+		{"id": 11, "name": "Nikao", "age": 21},
+		{"id": 12, "name": "Nilo", "age": 31},
+		{"id": 13, "name": "Jade", "age": 37},
+		{"id": 14, "name": "Jack", "age": 15},
+		{"id": 15, "name": "Eminem", "age": 35},
+		{"id": 16, "name": "Snoop", "age": 50},
+		{"id": 17, "name": "Dre", "age": 35},
+		{"id": 18, "name": "Lewa", "age": 33}
+	]}`)
+
 	if err := os.WriteFile(TEMPFILE, json, 0777); err != nil {
 		return err
 	}
@@ -106,22 +126,40 @@ func TestFindAll(t *testing.T) {
 	createFile()
 	resetDB()
 	cases := []struct {
-		label string
+		label          string
+		page           string
+		pageSize       string
+		lenghtReturned int
+		status         int
 	}{
-		{"Should return http 200"},
+		{"Should return http 200", "0", fmt.Sprintf("%v", len(handler.db["person"])), len(handler.db["person"]), http.StatusOK},
+		{"Should return http 200 with pagination page 0", "0", "3", 3, http.StatusOK},
+		{"Should return http 200 with pagination page 1", "1", "3", 3, http.StatusOK},
+		{"Should return http 200 with pagination page 1", "1", "5", 5, http.StatusOK},
+		{"Should return http 200 with pagination page 1", "3", "5", 3, http.StatusOK},
+		{"Should return http 400 with page invalid", "invalid", "5", 3, http.StatusBadRequest},
+		{"Should return http 400 with page_size invalid", "0", "invalid", 3, http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/person", nil)
+			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/person?page=%v&page_size=%v", tc.page, tc.pageSize), nil)
 			response := executeRequest(req)
-			res := make(DatabaseType)
-			err := parseResponse(response.Body.Bytes(), &res)
-			if err != nil {
-				t.Fatal(err)
+			if response.Code != tc.status {
+				t.Fatalf("Wrong status code. Expected: %v got: %v\n", tc.status, response.Code)
 			}
-			if len(res["person"]) != 2 {
-				t.Fatalf("Should have returned lenght 2, instead returned length %v\n", len(res["person"]))
+
+			if response.Code != http.StatusBadRequest {
+				res := make(DatabaseType)
+				err := parseResponse(response.Body.Bytes(), &res)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if len(res["person"]) != tc.lenghtReturned {
+					t.Fatalf("Should have returned lenght %v, instead returned length %v\n",
+					len(handler.db), len(res["person"]))
+				}
 			}
 		})
 	}
