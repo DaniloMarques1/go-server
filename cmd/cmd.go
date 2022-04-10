@@ -5,17 +5,33 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 )
 
 var (
 	portFlag int
 	fileFlag string
+	minified bool
+	help     bool
+)
+
+// messages
+
+const (
+	portMessage     = "Defined server port"
+	fileMessage     = "Defines which file will represent the api database"
+	minifiedMessage = "Indicates whether json should be written in one line or not"
+	helpMessage     = "Show the usage of the go-server"
 )
 
 func Run() {
 	parseFlags()
+	if help {
+		usage()
+		os.Exit(1)
+	}
 
-	handler, err := NewHandler(fileFlag, portFlag)
+	handler, err := NewHandler(fileFlag, portFlag, minified)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,9 +50,10 @@ func Run() {
 
 // set the serverPort and fileName
 func parseFlags() {
-	flag.IntVar(&portFlag, "p", 8080, "Defined server port")
-	flag.IntVar(&portFlag, "port", 8080, "Defined server port")
-	flag.StringVar(&fileFlag, "watch", "db.json", "Defines which file will represent the api database")
+	flag.IntVar(&portFlag, "port", 8080, portMessage)
+	flag.StringVar(&fileFlag, "watch", "db.json", fileMessage)
+	flag.BoolVar(&minified, "minified", false, minifiedMessage)
+	flag.BoolVar(&help, "help", false, helpMessage)
 
 	flag.Parse()
 }
@@ -45,4 +62,14 @@ func parseFlags() {
 func resources(entity string, port int) {
 	baseUrl := fmt.Sprintf("http://localhost:%v", port)
 	fmt.Printf("%v/%v\n", baseUrl, entity)
+}
+
+// show all the options that can be used with the go-server cli
+func usage() {
+	fmt.Println("All the options available")
+	fmt.Println()
+	fmt.Printf("-watch:            %v\n", fileMessage)
+	fmt.Printf("-port:             %v\n", portMessage)
+	fmt.Printf("-minified:         %v\n", minifiedMessage)
+	fmt.Printf("-help:             %v\n", helpMessage)
 }

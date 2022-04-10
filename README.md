@@ -22,7 +22,7 @@ location as an argument to the server. The file would look something like this:
 By doing:
 
 ```console
-go-server --watch ./db.json
+go-server -watch ./db.json
 ```
 
 Will be created endpoints for person, like:

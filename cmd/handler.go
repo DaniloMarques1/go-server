@@ -31,9 +31,10 @@ type Handler struct {
 	router     *chi.Mux
 	fileName   string
 	serverPort int
+	minified   bool
 }
 
-func NewHandler(fileName string, serverPort int) (*Handler, error) {
+func NewHandler(fileName string, serverPort int, minified bool) (*Handler, error) {
 	router := chi.NewRouter()
 	router.Use(middleware)
 	router.NotFound(handleNotFound)
@@ -71,10 +72,17 @@ func (h *Handler) readDB() (DatabaseType, error) {
 
 // write te current db state on file
 func (h *Handler) writeDB() error {
-	bytes, err := json.MarshalIndent(h.db, "", "  ")
+	var bytes []byte
+	var err error
+	if h.minified {
+		bytes, err = json.Marshal(h.db)
+	} else {
+		bytes, err = json.MarshalIndent(h.db, "", "  ")
+	}
 	if err != nil {
 		return err
 	}
+
 	if err := os.WriteFile(h.fileName, bytes, 0777); err != nil {
 		return err
 	}
