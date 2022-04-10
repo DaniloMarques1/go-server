@@ -53,8 +53,6 @@ func NewHandler(fileName string, serverPort int) (*Handler, error) {
 	return handler, nil
 }
 
-// TODO padronize name Db or DB
-
 // read the file given as argument and
 // set as the handler database
 func (h *Handler) readDB() (DatabaseType, error) {
@@ -87,26 +85,31 @@ func (h *Handler) writeDB() error {
 // on the db.json file
 func (h *Handler) RegisterRoutes(entity string) {
 	h.router.Get(fmt.Sprintf("/%v", entity), func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%v %v\n", r.Method, r.URL.String())
 		h.FindAll(entity, w, r)
 		return
 	})
 
 	h.router.Get(fmt.Sprintf("/%v/{entityId}", entity), func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%v %v\n", r.Method, r.URL.String())
 		h.FindById(entity, w, r)
 		return
 	})
 
 	h.router.Post(fmt.Sprintf("/%v", entity), func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%v %v\n", r.Method, r.URL.String())
 		h.Save(entity, w, r)
 		return
 	})
 
 	h.router.Delete(fmt.Sprintf("/%v/{entityId}", entity), func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%v %v\n", r.Method, r.URL.String())
 		h.RemoveById(entity, w, r)
 		return
 	})
 
 	h.router.Put(fmt.Sprintf("/%v/{entityId}", entity), func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%v %v\n", r.Method, r.URL.String())
 		h.Update(entity, w, r)
 		return
 	})
