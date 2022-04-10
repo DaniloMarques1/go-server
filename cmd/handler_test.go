@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 	var err error
-	handler, err = NewHandler(TEMPFILE, 8080)
+	handler, err = NewHandler(TEMPFILE, 8080, false)
 	if err != nil {
 		log.Fatal(err)
 	}
